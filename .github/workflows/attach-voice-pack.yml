@@ -1,0 +1,47 @@
+# Copies a voice pack from R2 into a GitHub release of beckon-releases, on
+# GitHub's own servers — uploading 550 MB from a home connection crawls.
+# Lives in brickandcanvas/beckon-releases at .github/workflows/attach-voice-pack.yml.
+# Run it from the Actions tab with the numbers scripts/voice-pack/build.sh printed.
+name: Attach voice pack
+
+on:
+  workflow_dispatch:
+    inputs:
+      number:
+        description: "Voice pack number (1 → tag voice-pack-1)"
+        required: true
+        default: "1"
+      sha256:
+        description: "SHA-256 of the zip, from build.sh"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: voice-pack-${{ inputs.number }}
+      FILE: beckon-voice-pack-${{ inputs.number }}.zip
+    steps:
+      - name: Download from R2
+        run: |
+          curl -fL --retry 5 --retry-all-errors -o "$FILE" \
+            "https://beckon-downloads.beckonapp.workers.dev/downloads/$TAG/$FILE"
+          ls -l "$FILE"
+
+      - name: Check it's the exact pack
+        run: echo "${{ inputs.sha256 }}  $FILE" | sha256sum --check
+
+      - name: Attach to the release (never marked latest)
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" \
+              --title "Voice pack ${{ inputs.number }}" \
+              --notes "Beckon's on-device speech recognition and voice. Downloaded by Beckon during setup; no need to download it yourself. Third-party models and licenses are listed in NOTICE.md inside the zip." \
+              --prerelease --latest=false
+          fi
